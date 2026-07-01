@@ -175,7 +175,7 @@ Each block is a `PipelineStep`; metric blocks add columns to each clip's metadat
 | Intelligibility/quality | `SquimMetrics` | `pyt_stoi`, `pyt_pesq`, `pyt_si_sdr` | torchaudio SQUIM | core |
 | SNR & reverb | `SnrReverbMetrics` | `snr`, `c50` | Brouhaha (pyannote) | `brouhaha` |
 | SNR (blind) | `SnrMetric` | `wada_snr` | WADA (DSP) | core |
-| Pitch | `PitchMetric` | `pitch_mean`, `pitch_std` | librosa pyin / penn | core / `pitch` |
+| Pitch | `CrepePitchMetric` / `PitchMetric` | `pitch_mean`, `pitch_std` | torchcrepe GPU (default) / librosa pyin CPU / penn | `pitch` / core |
 | Speaking rate | `SpeakingRateMetric` | `speaking_rate`, `char_rate` | phonemizer (espeak) | `ru` |
 | Style | `StyleMetric` | `energy_db`, `energy_dynamics`, `expressiveness` | DSP | core |
 | WER/CER | `WhisperWer` | `whisper_wer`, `whisper_cer` | faster-whisper | `asr` |

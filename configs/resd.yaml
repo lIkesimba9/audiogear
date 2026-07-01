@@ -42,8 +42,17 @@ metrics:
     device: ${device}
   - _target_: audiogear.pipeline.metrics.squim.SquimMetrics
     device: ${device}
-  - _target_: audiogear.pipeline.metrics.pitch.PitchMetric
-    backend: pyin
+  # Pitch — default is neural CREPE on the GPU (prefetch pipeline). Alternatives:
+  # pyin (zero-dependency CPU) and penn, both via the simpler PitchMetric class.
+  - _target_: audiogear.pipeline.metrics.pitch.CrepePitchMetric
+    device: ${device}
+    crepe_model: tiny                  # tiny (fast) | full (more accurate)
+    periodicity: 0.5                   # voiced-frame confidence threshold
+  # - _target_: audiogear.pipeline.metrics.pitch.PitchMetric
+  #   backend: pyin                    # librosa YIN, CPU, no extra deps
+  # - _target_: audiogear.pipeline.metrics.pitch.PitchMetric
+  #   backend: penn                    # neural penn (GPU); needs `--extra pitch`
+  #   gpu: 0
   - _target_: audiogear.pipeline.metrics.speaking_rate.SpeakingRateMetric
     language: ru
   - _target_: audiogear.pipeline.metrics.wer.WhisperWer

@@ -1,3 +1,13 @@
-# Pitch mean/std. backend: pyin (librosa, default) or penn (needs `pitch` extra)
-_target_: audiogear.pipeline.metrics.pitch.PitchMetric
-backend: pyin
+# Pitch mean/std. Default: neural CREPE on the GPU (torchcrepe) via the prefetch
+# pipeline. Alternatives below: pyin (librosa, CPU, no extra deps) and penn.
+_target_: audiogear.pipeline.metrics.pitch.CrepePitchMetric
+device: ${device}
+crepe_model: tiny          # tiny (fast) | full (more accurate)
+periodicity: 0.5           # voiced-frame confidence threshold
+# --- CPU fallback (no GPU / no torchcrepe): librosa pyin ---
+# _target_: audiogear.pipeline.metrics.pitch.PitchMetric
+# backend: pyin
+# --- neural penn (GPU; needs `--extra pitch`) ---
+# _target_: audiogear.pipeline.metrics.pitch.PitchMetric
+# backend: penn
+# gpu: 0
