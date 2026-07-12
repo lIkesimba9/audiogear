@@ -49,7 +49,17 @@ def load_audio(
     import torch
     import torchaudio
 
-    waveform, sr = torchaudio.load(path)
+    try:
+        waveform, sr = torchaudio.load(path)
+    except Exception:
+        # torchaudio's ffmpeg backend chokes on some valid files (e.g. MP3s whose
+        # default_audio_stream is None -> get_src_stream_info(None)); soundfile
+        # (libsndfile) reads them fine. Fall back so one odd file doesn't kill a shard.
+        import numpy as np
+        import soundfile as sf
+
+        data, sr = sf.read(path, dtype="float32", always_2d=True)  # (frames, channels)
+        waveform = torch.from_numpy(data.T).contiguous()           # (channels, frames)
     if mono and waveform.shape[0] > 1:
         waveform = waveform.mean(dim=0, keepdim=True)
     if target_sr is not None and sr != target_sr:
@@ -79,6 +89,13 @@ def audio_duration(path: str) -> float:
     try:
         wav, sr = torchaudio.load(path)
         return wav.shape[-1] / sr if sr else 0.0
+    except Exception:
+        pass
+    try:  # soundfile reads files torchaudio's ffmpeg backend rejects
+        import soundfile as sf
+
+        info = sf.info(path)
+        return info.frames / info.samplerate if info.samplerate else 0.0
     except Exception:
         return 0.0
 
