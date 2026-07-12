@@ -57,5 +57,6 @@ data/
 /gen_feat_configs.py
 /build_betterset.py
 /filter_clean.py
+/qa_report.py
 # auto-generated per-dataset configs (hardcoded local paths); regenerate locally
 /configs/feat_*.yaml
