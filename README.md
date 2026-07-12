@@ -175,10 +175,13 @@ Each block is a `PipelineStep`; metric blocks add columns to each clip's metadat
 | Intelligibility/quality | `SquimMetrics` | `pyt_stoi`, `pyt_pesq`, `pyt_si_sdr` | torchaudio SQUIM | core |
 | SNR & reverb | `SnrReverbMetrics` | `snr`, `c50` | Brouhaha (pyannote) | `brouhaha` |
 | SNR (blind) | `SnrMetric` | `wada_snr` | WADA (DSP) | core |
+| Bandwidth | `BandwidthMetric` | `bandwidth_hz`, `is_upsampled_est` | spectral rolloff (DSP) — catches upsampled audio the container `sample_rate` lies about | core |
 | Pitch | `CrepePitchMetric` / `PitchMetric` | `pitch_mean`, `pitch_std` | torchcrepe GPU (default) / librosa pyin CPU / penn | `pitch` / core |
-| Speaking rate | `SpeakingRateMetric` | `speaking_rate`, `char_rate` | phonemizer (espeak) | `ru` |
+| Speaking rate | `SpeakingRateMetric` | `speaking_rate`, `phonemes_per_word`, `char_rate` | phonemizer (espeak) | `ru` |
 | Style | `StyleMetric` | `energy_db`, `energy_dynamics`, `expressiveness` | DSP | core |
 | WER/CER | `WhisperWer` | `whisper_wer`, `whisper_cer` | faster-whisper | `asr` |
+| Punctuated ASR + agreement | `GigaAMv3` | `gigaam3_text`, `gigaam3_cer` | GigaAM-v3 e2e (punctuation/casing derived from the audio), batched | `asr` |
+| Punctuation | `PunctuationMetric` | `text_punctuated` | Silero TE (from text) or punctuating ASR (from audio) | `asr` |
 | Gender | `GenderMetric` | `gender_pred` | wav2vec2 xlsr | core |
 | Emotion | `EmotionMetric` | `emotion_pred`, `emotion_score` | RU DUSHA HuBERT | core |
 | Accent (EN) | `AccentMetric` | `accent` | SpeechBrain ECAPA | (speechbrain) |
@@ -228,11 +231,27 @@ brouhaha, diarization, accent are config-gated.
 - **GPU metrics survive CUDA OOM (long clips).** A clip too long to fit in VRAM
   is retried automatically: `empty_cache` → re-decode in `chunk_seconds` (default
   20 s) windows on the GPU and aggregate → if it *still* OOMs, finish that clip on
-  CPU after the GPU pass → worst case write a `NaN` sentinel. The shard never
-  dies, and genuine (non-OOM) errors still propagate. Tune per block with
+  CPU after the GPU pass → worst case write a `NaN` sentinel. Tune per block with
   `chunk_seconds` / `cpu_overflow_threads`. Because OOM no longer kills a dataset,
   you can push `executor.workers` higher than before (a few long clips just spill
   to CPU).
+- **One corrupt clip never kills a shard.** Every execution path (serial,
+  parallel-CPU, per-clip GPU, batched, prefetch) routes per-clip exceptions
+  through a central guard: the clip gets a sentinel value (`NaN`, or `-1` for
+  WER/CER/SQUIM) plus a warning, and the run continues — treat NaN/negative
+  metric values as "no value" downstream. A non-OOM error on a whole GPU batch
+  retries the batch clip-by-clip so only the culprit is sentinelled. Only an
+  **unbroken failure streak** (`max_consecutive_failures`, default 50) aborts
+  the shard — that means a systematic problem (model load, bad config, dead
+  CUDA context), not bad data. New metrics get all of this for free: implement
+  `compute_metric` and do *not* wrap it in try/except.
+- **Intra-shard resume (checkpoints).** Besides shard-level completion markers,
+  every metric appends a per-clip JSONL checkpoint under
+  `<output_folder>/checkpoints/`; a rerun after a crash resumes an unfinished
+  shard from the last computed clip instead of recomputing hours of GPU work.
+  On by default (`resume: false` disables, `checkpoint_dir` relocates).
+  Checkpoints are keyed by clip id only — delete the `checkpoints/` folder when
+  you change a metric's model or parameters.
 
 ## Execution modes (1 → N machines, 1 → N GPUs)
 
@@ -257,9 +276,11 @@ AUDIOGEAR_NODE_RANK=$i AUDIOGEAR_NUM_NODES=$N \
   uv run python process.py --config-name resd executor.tasks=256 executor.workers=8
 ```
 
-Runs are resumable: completed shards are skipped on rerun (`skip_completed`).
-GPU detection avoids initializing CUDA in the parent and uses `spawn`, so
-multi-GPU does not deadlock.
+Runs are resumable at two levels: completed shards are skipped on rerun
+(`skip_completed`), and an *unfinished* shard resumes from the last computed
+clip via the per-metric checkpoints (see "Intra-shard resume" above) — rerunning
+the same command after any crash is always safe. GPU detection avoids
+initializing CUDA in the parent and uses `spawn`, so multi-GPU does not deadlock.
 
 See [`docs/multi-node.md`](docs/multi-node.md) for the full distributed guide
 (verified multi-GPU / multi-node / resume runs). There is **no separate Slurm
@@ -451,10 +472,38 @@ for a ready 2–3 backend setup.
 
 For a one-off dataset, `process.py --config-name <name>` is enough. To sweep a
 whole **collection** of datasets — generate a per-dataset config for each, run
-them smallest-first with resume, merge the per-shard CSVs, then filter to a clean
-subset — see [`examples/`](examples/): config generation, a batch runner, and a
-quality filter, all driven by `AUDIOGEAR_DATA_DIR` (no hardcoded paths). They are
-templates to copy and adapt, not a fixed CLI.
+them smallest-first with resume, merge the per-shard CSVs (with id dedup), then
+filter to a clean subset — see [`examples/`](examples/): config generation
+(`gen_configs.py`), a batch runner (`run_batch.py`), a quality filter
+(`filter_clean.py`), and a QA report (`qa_report.py`), all driven by
+`AUDIOGEAR_DATA_DIR` (no hardcoded paths). They are templates to copy and adapt,
+not a fixed CLI.
+
+### QA report & threshold calibration
+
+```bash
+export AUDIOGEAR_DATA_DIR=/path/to/data_root
+uv run python examples/filter_clean.py resd   # extended_metadata.csv -> clean_metadata.csv + drop reasons
+uv run python examples/qa_report.py resd      # -> <data_root>/resd/qa_report.html
+```
+
+`qa_report.py` renders one **self-contained HTML per dataset**: summary cards,
+the drop-reason breakdown, an SVG histogram per filtered metric with the
+`filter_clean` threshold drawn in, and **playable audio embedded for the clips
+just below / just above each threshold**. That is the threshold-calibration
+loop: if the rejected clips near a threshold sound fine, the threshold is too
+strict; if the accepted ones sound bad, it is too loose — adjust `TH` in
+`examples/filter_clean.py` (the single source of truth for both the filter and
+the report) and regenerate.
+
+## Using audiogear from another project (agent skill)
+
+[`SKILL.md`](SKILL.md) is a ready-made [Agent Skill](https://docs.claude.com/en/docs/claude-code/skills)
+for Claude Code: copy it into a consuming project as
+`.claude/skills/audiogear/SKILL.md` and the agent knows how to install
+audiogear, prepare `metadata.csv`, write a per-dataset config, run/resume the
+pipeline, merge shards, filter, and build QA reports — including the pitfalls
+(lane rules, sentinel semantics, checkpoint staleness).
 
 ## Testing
 
@@ -466,31 +515,35 @@ uv run pytest              # or: .venv/bin/python -m pytest
 The suite is **CPU-only and downloads no model weights** — it exercises the
 pipeline plumbing where the real bugs live: CSV writer/reader round-trips (column
 alignment), result↔segment pairing across every scheduling path (batched /
-prefetch / plain-GPU / parallel-CPU), the runtime helpers (length bucketing,
-windowing, OOM detection), and text normalization. Fast enough to run on every
-change. See [`docs/testing.md`](docs/testing.md) for the suite plus a verified
-end-to-end run on a small subset (2× RTX 4090).
+prefetch / plain-GPU / parallel-CPU), the per-clip failure guard on all of those
+paths (poisoned clips → sentinels, streak abort), checkpoint resume (partial
+runs, torn lines, type round-trips), shard-merge dedup, the runtime helpers
+(length bucketing, windowing, OOM detection), and text normalization. Fast
+enough to run on every change. See [`docs/testing.md`](docs/testing.md) for the
+suite plus a verified end-to-end run on a small subset (2× RTX 4090).
 
 ## Project layout
 
 ```
 audiogear/
   process.py                 # entrypoint: python process.py --config-name <dataset>
+  SKILL.md                   # agent skill: drive audiogear from another project
   configs/                   # Hydra configs (config.yaml, resd.yaml, reader/ writer/ executor/ metric/)
   src/audiogear/
     audio.py                 # shared load/resample
     data.py                  # AudioSegment / AudioPipeline
-    build.py                 # Hydra builder (instantiate -> pipeline -> executor)
+    build.py                 # Hydra builder (instantiate -> pipeline -> executor, checkpoint wiring)
     pipeline/
       readers/ writers/ segmenters/
       metrics/               # all metric blocks
       transcribers/          # consensus ASR + backends
       parallel.py            # ParallelLanes: concurrent CPU∥GPU metric lanes
+      checkpoint.py          # per-metric JSONL checkpoints (intra-shard resume)
     executer/                # Local executor (GPU pinning, sharding, resume)
     utils/                   # runtime.py (threads, CUDA-OOM ladder, model cache, batching), progress.py
   tests/                     # pytest suite (CPU-only, no model downloads)
   docs/                      # multi-node.md, storage.md (S3), testing.md
-  examples/                  # multi-dataset orchestration templates (config gen, batch run, filtering)
+  examples/                  # multi-dataset templates (config gen, batch run, filtering, QA report)
   eval/                      # sanity_distillmos.py
   models/                    # downloaded model weights (git-ignored)
 ```
