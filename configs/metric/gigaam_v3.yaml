@@ -12,3 +12,4 @@ device: ${device}
 batch_size: 16
 punct_column: text_punctuated
 min_match: 0.6
+# words_column: gigaam3_words   # opt-in: word timestamps of the hypothesis (JSON)

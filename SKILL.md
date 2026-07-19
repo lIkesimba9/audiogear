@@ -164,7 +164,7 @@ where `text` was written by humans, not by an ASR model.
 | `style.StyleMetric` | `energy_db`, `energy_dynamics`, `expressiveness` | CPU; reuses `pitch_*` if present |
 | `speaking_rate.SpeakingRateMetric` | `speaking_rate`, `phonemes_per_word`, `char_rate` | espeak-ng; NOT thread-safe — leave it serial |
 | `wer.WhisperWer` | `whisper_wer`, `whisper_cer` | vs `text`; -1 when no reference. Skip for ASR-derived text (CER≈0, meaningless, expensive) |
-| `gigaam_v3.GigaAMv3` | `gigaam3_text`, `gigaam3_cer` | punctuated-from-audio RU transcript, batched |
+| `gigaam_v3.GigaAMv3` | `gigaam3_text`, `gigaam3_cer`, `text_punctuated`, opt-in words JSON | punctuated-from-audio RU transcript + punctuation transferred onto reference words; `model_name: multilingual_ctc` for ru/en/kk/ky/uz (no punctuation — set `punct_column: null`); `words_column` adds word timestamps |
 | `gender.GenderMetric` / `emotion.EmotionMetric` | `gender_pred` / `emotion_pred`, `emotion_score` | `_pred` suffix — never overwrite curated columns |
 | `hf.HFAudioModelMetric` | configurable | any 🤗 audio classification/regression model, config-only |
 | `brouhaha_snr_reverb.SnrReverbMetrics` | `snr`, `c50` | pyannote, gated (HF_TOKEN) |

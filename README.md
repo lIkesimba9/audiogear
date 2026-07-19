@@ -193,7 +193,7 @@ Each block is a `PipelineStep`; metric blocks add columns to each clip's metadat
 | Speaking rate | `SpeakingRateMetric` | `speaking_rate`, `phonemes_per_word`, `char_rate` | phonemizer (espeak) | `ru` |
 | Style | `StyleMetric` | `energy_db`, `energy_dynamics`, `expressiveness` | DSP | core |
 | WER/CER | `WhisperWer` | `whisper_wer`, `whisper_cer` | faster-whisper | `asr` |
-| Punctuated ASR + agreement | `GigaAMv3` | `gigaam3_text`, `gigaam3_cer` | GigaAM-v3 e2e (punctuation/casing derived from the audio), batched | `asr` |
+| Punctuated ASR + agreement | `GigaAMv3` | `gigaam3_text`, `gigaam3_cer`, `text_punctuated`, opt-in `gigaam3_words` | GigaAM-v3 e2e (punctuation/casing derived from the audio, ru) **or** GigaAM Multilingual (`multilingual_ctc` / `multilingual_large_ctc`: ru en kk ky uz — no punctuation, set `punct_column: null`), batched, opt-in word timestamps | `asr` |
 | Punctuation | `PunctuationMetric` | `text_punctuated` | Silero TE (from text) or punctuating ASR (from audio) | `asr` |
 | Gender | `GenderMetric` | `gender_pred` | wav2vec2 xlsr | core |
 | Emotion | `EmotionMetric` | `emotion_pred`, `emotion_score` | RU DUSHA HuBERT | core |
@@ -562,10 +562,13 @@ audiogear/
 ```
 
 ## Notes on dependency pins
-GigaAM pins `torchaudio<=2.5.1`, so torch is capped `<2.6`; transformers is then
-capped `<5` and huggingface-hub `<1.0` to keep pyannote 3.x working; a uv
-`override-dependencies` forces a loadable `onnxruntime`. transformers-based ASR
-models must therefore ship `safetensors`. See `pyproject.toml` for the rationale.
+`gigaam` installs **from git, pinned to a commit** (PyPI is stuck at 0.1.0,
+v2-era: no v3/e2e or multilingual models and a hard `torchaudio<=2.5.1` pin).
+gigaam 0.2 dropped that pin, but torch stays capped `<2.6` — it is what this
+stack is tested against; transformers is capped `<5` and huggingface-hub `<1.0`
+to keep pyannote 3.x working; a uv `override-dependencies` forces a loadable
+`onnxruntime`. transformers-based ASR models must therefore ship `safetensors`.
+See `pyproject.toml` for the rationale.
 
 ## Write-ups
 

@@ -73,3 +73,26 @@ def test_gigaam_metric_declares_three_columns():
     assert m2.output_columns == ("gigaam3_text", "gigaam3_cer")
     assert m2._failed_value() == ("", -1.0)
     assert m2._score(seg, "Ты придёшь домой?") == ("Ты придёшь домой?", cer)
+
+
+def test_gigaam_words_column_plumbing():
+    pytest.importorskip("gigaam")
+    pytest.importorskip("jiwer")
+    import json
+    from types import SimpleNamespace
+
+    from audiogear.data import AudioSegment
+    from audiogear.pipeline.metrics.gigaam_v3 import GigaAMv3
+
+    m = GigaAMv3(device="cpu", words_column="gigaam3_words")
+    assert m.output_columns == ("gigaam3_text", "gigaam3_cer", "text_punctuated", "gigaam3_words")
+    assert m._failed_value() == ("", -1.0, "", "[]")
+
+    seg = AudioSegment(id="1", audio_file="x.wav", format="wav", text="ты придешь домой")
+    words = [SimpleNamespace(text="Ты", start=0.0, end=0.48), SimpleNamespace(text="придёшь", start=0.5, end=1.0)]
+    hyp, cer, punct, words_json = m._score(seg, "Ты придёшь домой?", words)
+    parsed = json.loads(words_json)
+    assert parsed[0] == {"text": "Ты", "start": 0.0, "end": 0.48}
+    assert punct == "ты придешь домой?"
+    # no words delivered (e.g. sentinel path) -> valid empty JSON list
+    assert m._score(seg, "Ты придёшь домой?", None)[3] == "[]"

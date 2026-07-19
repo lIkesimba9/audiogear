@@ -1,0 +1,15 @@
+# GigaAM Multilingual ASR (SberDevices, MIT; gigaam >= 0.2): ru, en, kk, ky, uz.
+# Charwise CTC — lowercase, NO punctuation — so this is a coverage/agreement
+# transcriber, not a punctuation source (punct_column stays null; for Russian
+# punctuation-by-audio use metric/gigaam_v3.yaml).
+# Columns: gigaam_ml_text (hypothesis), gigaam_ml_cer (CER vs `text`, -1 without
+# a reference). Optional gigaam_ml_words: word timestamps as JSON.
+# model_name: multilingual_ctc (220M) | multilingual_large_ctc (600M, best WER).
+_target_: audiogear.pipeline.metrics.gigaam_v3.GigaAMv3
+model_name: multilingual_ctc
+device: ${device}
+batch_size: 16
+text_column: gigaam_ml_text
+cer_column: gigaam_ml_cer
+punct_column: null
+# words_column: gigaam_ml_words

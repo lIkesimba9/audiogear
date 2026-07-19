@@ -30,9 +30,12 @@ dependencies = [
     "librosa>=0.10.1",
     "numba>=0.59",  # avoid librosa pulling an ancient numba incompatible with py3.11/3.12
     # ml core (models live behind metric blocks).
-    # Capped <2.6 because gigaam (RU ASR) pins torchaudio<=2.5.1. Consequence:
-    # transformers refuses to torch.load non-safetensors checkpoints
-    # (CVE-2025-32434), so transformers-based ASR backends must use safetensors.
+    # Capped <2.6: originally forced by gigaam's torchaudio<=2.5.1 pin; gigaam
+    # 0.2 (git) dropped that pin, but 2.5.x remains what this stack is tested
+    # against — lift the cap only after revalidating pyannote/transformers.
+    # Consequence: transformers refuses to torch.load non-safetensors
+    # checkpoints (CVE-2025-32434), so transformers-based ASR backends must use
+    # safetensors.
     "torch>=2.4,<2.6",
     "torchaudio>=2.4,<2.6",
     # transformers<5 + huggingface-hub<1: pyannote.audio 3.x calls the
@@ -53,7 +56,15 @@ dependencies = [
 brouhaha = ["pyannote.audio>=3.1,<4", "scikit-learn>=1.3"]
 pitch = ["penn>=1.0", "torchcrepe>=0.0.22"]
 mos = ["distillmos>=0.9"]
-asr = ["gigaam>=0.1", "faster-whisper>=1.0", "jiwer>=3.0"]
+# gigaam from git: PyPI is stuck at 0.1.0 (v2-era — no v3/e2e, no multilingual,
+# hard torch<=2.5.1 pin). 0.2.x adds v3 + multilingual models, word timestamps,
+# batched RNNT decode and a batched-encoder padding fix; pinned to a commit for
+# reproducibility.
+asr = [
+    "gigaam @ git+https://github.com/salute-developers/GigaAM@559d88d6b72541412743929f633a6ae7c9950b85",
+    "faster-whisper>=1.0",
+    "jiwer>=3.0",
+]
 # T-one (t-tech) streaming Conformer-CTC Russian ASR. PyPI `tone` is a name-squat,
 # so pull the real package from git (`--extra tone`):
 tone = ["tone @ git+https://github.com/voicekit-team/T-one.git"]
